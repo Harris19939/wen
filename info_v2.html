@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arch-Commander | Pro Console</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { background-color: #0f172a; color: #e2e8f0; font-family: 'JetBrains Mono', 'Fira Code', monospace; overflow: hidden; }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .glass-panel { background: rgba(30, 41, 59, 0.6); backdrop-filter: blur(12px); border-right: 1px solid rgba(255,255,255,0.05); }
+        .active-item { background: rgba(56, 189, 248, 0.15); border-left: 3px solid #38bdf8; color: #38bdf8; }
+        .input-dark { background: #1e293b; border: 1px solid #334155; color: white; outline: none; transition: all 0.2s; }
+        .input-dark:focus { border-color: #38bdf8; box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2); }
+        .blur-text { filter: blur(4px); user-select: none; transition: filter 0.2s; }
+        .blur-text:hover { filter: blur(0); }
+        .category-header { display: flex; justify-content: space-between; align-items: center; }
+        .category-edit-btn { opacity: 0; transition: opacity 0.2s; }
+        .category-item:hover .category-edit-btn { opacity: 1; }
+    </style>
+</head>
+<body>
+    <div id="app" class="flex h-screen w-screen">
+        
+        <aside class="w-1/4 min-w-[300px] glass-panel flex flex-col h-full border-r border-slate-700">
+            <div class="p-6 border-b border-slate-700">
+                <h1 class="text-xl font-bold tracking-wider text-sky-400"><i class="fas fa-terminal mr-2"></i>NAV_PRO_V2</h1>
+                <div class="mt-4 relative">
+                    <input type="text" v-model="searchQuery" placeholder="搜索资源..." 
+                           class="w-full bg-slate-800 text-sm px-4 py-2 rounded text-slate-300 focus:outline-none focus:ring-1 focus:ring-sky-500">
+                    <i class="fas fa-search absolute right-3 top-2.5 text-slate-500"></i>
+                </div>
+            </div>
+
+            <div class="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-hide">
+                <div v-for="(category, categoryName) in categorizedTools" :key="categoryName">
+                    <div class="category-item mb-2">
+                        <div class="category-header bg-slate-800/50 px-3 py-2 rounded-t-lg flex justify-between items-center">
+                            <h3 class="font-medium text-slate-300" @click="toggleCategory(categoryName)">
+                                <i v-if="expandedCategories.includes(categoryName)" class="fas fa-chevron-down mr-2 text-xs"></i>
+                                <i v-else class="fas fa-chevron-right mr-2 text-xs"></i>
+                                [[ categoryName ]]
+                                <span class="text-xs text-slate-500 ml-2">([[ category.length ]])</span>
+                            </h3>
+                            <button @click="editCategory(categoryName)" class="category-edit-btn text-slate-500 hover:text-white">
+                                <i class="fas fa-edit text-xs"></i>
+                            </button>
+                        </div>
+                        <div v-show="expandedCategories.includes(categoryName)" class="bg-slate-800/30 rounded-b-lg">
+                            <div v-for="item in category" :key="item.id" @click="selectTool(item)"
+                                 class="p-3 rounded cursor-pointer hover:bg-slate-800 transition-colors flex justify-between items-center group"
+                                 :class="{ 'active-item': currentTool && currentTool.id === item.id }">
+                                <div>
+                                    <span class="block font-medium">[[ item.name ]]</span>
+                                    <span class="text-xs text-slate-500 truncate max-w-[150px]">[[ item.url ]]</span>
+                                </div>
+                                <i class="fas fa-chevron-right text-xs opacity-0 group-hover:opacity-50"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <button @click="createNew" class="w-full mt-4 border border-dashed border-slate-600 text-slate-400 py-2 rounded hover:border-sky-500 hover:text-sky-500 transition-all">
+                    + 添加新资源
+                </button>
+            </div>
+            
+            <div class="p-3 bg-slate-900 text-xs text-slate-500 flex justify-between">
+                <span>Total: [[ tools.length ]]</span>
+                <span class="cursor-pointer hover:text-green-400" @click="exportData"><i class="fas fa-download"></i> 备份数据</span>
+            </div>
+        </aside>
+
+        <main class="flex-1 bg-slate-900 flex flex-col relative">
+            <div v-if="currentTool" class="h-full flex flex-col">
+                
+                <header class="h-16 border-b border-slate-800 flex items-center justify-between px-8 bg-slate-900/50">
+                    <h2 class="text-2xl font-bold text-white">
+                        <span v-if="!isEditing">[[ currentTool.name ]]</span>
+                        <input v-else v-model="editForm.name" class="bg-transparent border-b border-sky-500 focus:outline-none text-white" placeholder="资源名称">
+                    </h2>
+                    <div class="flex gap-3">
+                        <button v-if="!isEditing" @click="toggleEdit" class="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 rounded text-sm text-sky-400 border border-slate-700">
+                            <i class="fas fa-pen mr-2"></i>编辑
+                        </button>
+                        <button v-if="!isEditing" @click="deleteTool" class="px-4 py-1.5 bg-slate-800 hover:bg-red-900/30 rounded text-sm text-red-400 border border-slate-700 hover:border-red-500">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                        
+                        <button v-if="isEditing" @click="saveTool" class="px-4 py-1.5 bg-sky-600 hover:bg-sky-500 rounded text-sm text-white font-bold shadow-lg shadow-sky-900/50">
+                            <i class="fas fa-save mr-2"></i>保存
+                        </button>
+                        <button v-if="isEditing" @click="cancelEdit" class="px-4 py-1.5 hover:text-white text-slate-400 text-sm">
+                            取消
+                        </button>
+                    </div>
+                </header>
+
+                <div class="p-8 max-w-4xl mx-auto w-full space-y-8">
+                    
+                    <div v-if="!isEditing" class="grid grid-cols-1 gap-6 animate-fade-in">
+                        <div class="bg-slate-800/50 p-6 rounded-xl border border-slate-700">
+                            <label class="text-xs text-sky-500 font-bold uppercase tracking-wider mb-2 block">Target Link</label>
+                            <div class="flex items-center gap-4">
+                                <a :href="currentTool.url" target="_blank" class="text-xl text-white hover:underline truncate flex-1">
+                                    [[ currentTool.url ]] <i class="fas fa-external-link-alt text-sm ml-1 opacity-50"></i>
+                                </a>
+                                <button @click="copyToClip(currentTool.url)" class="text-slate-400 hover:text-white"><i class="far fa-copy"></i></button>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-6">
+                            <div class="bg-slate-800/50 p-6 rounded-xl border border-slate-700">
+                                <label class="text-xs text-emerald-500 font-bold uppercase tracking-wider mb-2 block">Username / ID</label>
+                                <div class="flex justify-between">
+                                    <span class="text-lg text-slate-200">[[ currentTool.username || '---' ]]</span>
+                                    <button @click="copyToClip(currentTool.username)" class="text-slate-400 hover:text-white"><i class="far fa-copy"></i></button>
+                                </div>
+                            </div>
+                            
+                            <div class="bg-slate-800/50 p-6 rounded-xl border border-slate-700 relative overflow-hidden group">
+                                <label class="text-xs text-rose-500 font-bold uppercase tracking-wider mb-2 block">Password / Token</label>
+                                <div class="flex justify-between items-center relative z-10">
+                                    <span class="text-lg text-slate-200 font-mono blur-text cursor-help">[[ currentTool.password || '---' ]]</span>
+                                    <button @click="copyToClip(currentTool.password)" class="text-slate-400 hover:text-white"><i class="far fa-copy"></i></button>
+                                </div>
+                                <div class="absolute inset-0 bg-rose-500/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-6">
+                            <div class="bg-slate-800/50 p-6 rounded-xl border border-slate-700">
+                                <label class="text-xs text-amber-500 font-bold uppercase tracking-wider mb-2 block">Category</label>
+                                <span class="text-lg text-slate-200">[[ currentTool.category || '未分类' ]]</span>
+                            </div>
+                            
+                            <div class="bg-slate-800/50 p-6 rounded-xl border border-slate-700">
+                                <label class="text-xs text-violet-500 font-bold uppercase tracking-wider mb-2 block">System Notes</label>
+                                <p class="text-slate-300 whitespace-pre-wrap leading-relaxed">[[ currentTool.notes || '暂无备注信息...' ]]</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div v-else class="space-y-6">
+                        <div class="grid grid-cols-1 gap-1">
+                            <label class="text-xs text-slate-400">资源链接 (URL)</label>
+                            <input v-model="editForm.url" type="text" class="input-dark w-full p-3 rounded-lg font-mono">
+                        </div>
+                        <div class="grid grid-cols-2 gap-6">
+                            <div>
+                                <label class="text-xs text-slate-400">账号 (User)</label>
+                                <input v-model="editForm.username" type="text" class="input-dark w-full p-3 rounded-lg">
+                            </div>
+                            <div>
+                                <label class="text-xs text-slate-400">密码 (Password)</label>
+                                <div class="relative">
+                                    <input v-model="editForm.password" type="password" class="input-dark w-full p-3 rounded-lg font-mono pr-10">
+                                    <button @click="generatePassword" class="absolute right-2 top-3 text-slate-400 hover:text-white">
+                                        <i class="fas fa-sync-alt"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-1 gap-1">
+                            <label class="text-xs text-slate-400">分类 (Category)</label>
+                            <input v-model="editForm.category" type="text" class="input-dark w-full p-3 rounded-lg" placeholder="输入分类名称">
+                        </div>
+                        <div>
+                            <label class="text-xs text-slate-400">备注 (Notes)</label>
+                            <textarea v-model="editForm.notes" rows="5" class="input-dark w-full p-3 rounded-lg"></textarea>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <div v-else class="flex-1 flex flex-col items-center justify-center text-slate-600">
+                <i class="fas fa-cube text-6xl mb-4 opacity-20"></i>
+                <p>选择左侧资源或新建一个条目</p>
+                <p class="text-sm opacity-50 mt-2">Local Storage Mode</p>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const { createApp, ref, computed, onMounted } = Vue;
+
+        createApp({
+            setup() {
+                // 核心数据
+                const tools = ref([]);
+                const searchQuery = ref('');
+                const currentTool = ref(null);
+                const isEditing = ref(false);
+                const editForm = ref({});
+                const expandedCategories = ref(['工作', '开发']); // 默认展开的分类
+                
+                // 初始化加载
+                onMounted(() => {
+                    const saved = localStorage.getItem('arch_tools_pro');
+                    if (saved) {
+                        tools.value = JSON.parse(saved);
+                    } else {
+                        // 默认示例数据，带分类
+                        tools.value = [
+                            { 
+                                id: 1, 
+                                name: 'GitHub Pro', 
+                                url: 'https://github.com', 
+                                username: 'git_master', 
+                                password: 'my_secret_token', 
+                                notes: '用于开源项目管理',
+                                category: '开发'
+                            },
+                            { 
+                                id: 2, 
+                                name: '阿里云 ECS', 
+                                url: 'https://aliyun.com', 
+                                username: 'root', 
+                                password: 'server_password', 
+                                notes: 'IP: 47.103.xx.xx\nRegion: Shanghai',
+                                category: '工作'
+                            },
+                            { 
+                                id: 3, 
+                                name: 'Jira 项目管理', 
+                                url: 'https://atlassian.com/jira', 
+                                username: 'project_manager', 
+                                password: 'jira_token', 
+                                notes: '团队项目管理工具',
+                                category: '工作'
+                            }
+                        ];
+                        saveData();
+                    }
+                });
+
+                // 按分类组织资源
+                const categorizedTools = computed(() => {
+                    const result = {};
+                    
+                    // 按分类分组
+                    tools.value.forEach(tool => {
+                        const category = tool.category || '未分类';
+                        if (!result[category]) {
+                            result[category] = [];
+                        }
+                        result[category].push(tool);
+                    });
+                    
+                    // 按分类名称排序
+                    const sortedCategories = Object.keys(result).sort();
+                    const sortedResult = {};
+                    sortedCategories.forEach(category => {
+                        sortedResult[category] = result[category];
+                    });
+                    
+                    return sortedResult;
+                });
+
+                // 搜索过滤
+                const filteredTools = computed(() => {
+                    if (!searchQuery.value) return tools.value;
+                    const q = searchQuery.value.toLowerCase();
+                    return tools.value.filter(t => 
+                        t.name.toLowerCase().includes(q) || 
+                        t.url.toLowerCase().includes(q) ||
+                        (t.category && t.category.toLowerCase().includes(q))
+                    );
+                });
+
+                // 选择工具
+                const selectTool = (tool) => {
+                    if (isEditing.value) {
+                        if(!confirm("正在编辑中，确定要放弃修改吗？")) return;
+                    }
+                    currentTool.value = tool;
+                    isEditing.value = false;
+                };
+
+                // 创建新工具
+                const createNew = () => {
+                    const newTool = {
+                        id: Date.now(),
+                        name: 'New Resource',
+                        url: 'https://',
+                        username: '',
+                        password: '',
+                        notes: '',
+                        category: '未分类'
+                    };
+                    tools.value.push(newTool);
+                    currentTool.value = newTool;
+                    editForm.value = { ...newTool };
+                    isEditing.value = true;
+                };
+
+                // 编辑逻辑
+                const toggleEdit = () => {
+                    editForm.value = { ...currentTool.value };
+                    isEditing.value = true;
+                };
+
+                const cancelEdit = () => {
+                    isEditing.value = false;
+                };
+
+                const saveTool = () => {
+                    // 更新当前对象
+                    Object.assign(currentTool.value, editForm.value);
+                    // 保存到 LocalStorage
+                    saveData();
+                    isEditing.value = false;
+                };
+
+                const deleteTool = () => {
+                    if(confirm(`确定要删除 ${currentTool.value.name} 吗?`)) {
+                        const index = tools.value.findIndex(t => t.id === currentTool.value.id);
+                        tools.value.splice(index, 1);
+                        currentTool.value = null;
+                        saveData();
+                    }
+                };
+
+                const saveData = () => {
+                    localStorage.setItem('arch_tools_pro', JSON.stringify(tools.value));
+                };
+
+                // 工具函数
+                const copyToClip = (text) => {
+                    if(!text) return;
+                    navigator.clipboard.writeText(text).then(() => {
+                        alert("已复制到剪贴板"); 
+                    });
+                };
+
+                const exportData = () => {
+                    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(tools.value));
+                    const downloadAnchorNode = document.createElement('a');
+                    downloadAnchorNode.setAttribute("href", dataStr);
+                    downloadAnchorNode.setAttribute("download", "my_tools_backup.json");
+                    document.body.appendChild(downloadAnchorNode);
+                    downloadAnchorNode.click();
+                    downloadAnchorNode.remove();
+                };
+
+                // 分类相关函数
+                const toggleCategory = (categoryName) => {
+                    const index = expandedCategories.value.indexOf(categoryName);
+                    if (index === -1) {
+                        expandedCategories.value.push(categoryName);
+                    } else {
+                        expandedCategories.value.splice(index, 1);
+                    }
+                };
+
+                const editCategory = (categoryName) => {
+                    const newName = prompt(`编辑分类名称:`, categoryName);
+                    if (newName && newName !== categoryName) {
+                        // 更新所有该分类下的资源
+                        tools.value.forEach(tool => {
+                            if (tool.category === categoryName) {
+                                tool.category = newName;
+                            }
+                        });
+                        saveData();
+                    }
+                };
+
+                // 密码生成器
+                const generatePassword = () => {
+                    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()';
+                    let password = '';
+                    for (let i = 0; i < 16; i++) {
+                        password += chars.charAt(Math.floor(Math.random() * chars.length));
+                    }
+                    editForm.value.password = password;
+                };
+
+                return { 
+                    tools, searchQuery, filteredTools, currentTool, 
+                    isEditing, editForm, expandedCategories, categorizedTools,
+                    selectTool, createNew, toggleEdit, cancelEdit, saveTool, deleteTool, 
+                    copyToClip, exportData, toggleCategory, editCategory, generatePassword
+                };
+            },
+            delimiters: ['[[', ']]']
+        }).mount('#app');
+    </script>
+</body>
+</html>
